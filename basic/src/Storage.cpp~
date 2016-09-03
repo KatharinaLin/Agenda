@@ -1,0 +1,262 @@
+#include <iostream>
+#include "Storage.hpp"
+#include <functional>
+#include <list>
+#include <memory>
+#include <string>
+#include <fstream>
+#include <sstream>
+#include <vector>
+using std::string;
+using std::endl;
+std::shared_ptr<Storage> Storage::m_instance = NULL;
+Storage::Storage() {
+  m_dirty = false;
+}
+  /*
+  *   read file content into memory
+  *   @return if success, true will be returned
+  */
+bool Storage::readFromFile(void) {
+  std::ifstream in("../data/users.csv");
+  if (!in) return false;
+  string line;
+  while (getline(in, line)) {
+    std::istringstream sin(line);
+    std::vector<string> datas;
+    string data;
+    while (getline(sin, data, ',')) {
+      datas.push_back(data);
+    }
+    User newone(datas[0], datas[1], datas[2], datas[3]);
+    m_userList.push_back(newone);
+  }
+  in.close();
+  std::ifstream min("../data/meetings.csv");
+  if (!min) return false;
+  while (getline(min, line)) { //std::istringstream msin’ has initializer but incomplete type
+
+    std::istringstream msin(line);
+    std::vector<string> num;
+    string numb;
+    while (getline(msin, numb, ',')) {
+      num.push_back(numb);
+    }
+    std::vector<string> part;
+    int i;
+    std::vector<int> sign;
+    string str = num[2];
+    for (i = 0; i < num[2].length(); i++) {
+      if (str[i] == '&') sign.push_back(i);
+    }
+    std::vector<string> participate;
+    
+    int j = sign.size();
+    if (j == 0) {
+      participate.push_back(str);
+    } else if (j == 1) {
+      participate.push_back(str.substr(0, sign[0]));
+      participate.push_back(str.substr(sign[0]+1, str.length()-sign[0]-1));
+    } else {
+      for (i = 0; i < j; i++) {
+      if (i == 0) participate.push_back(str.substr(0, sign[0]));
+      else if (i == j - 1 && i != 0) participate.push_back(str.substr(sign[i]+1, str.length()-sign[i]-1));
+      else participate.push_back(str.substr(sign[i-1]+1, sign[i]-sign[i]-1));
+    }
+    }
+    Date A(num[2]);
+    Date B(num[3]);
+    Meeting newtwo(num[0], participate, A, B, num[4]);
+    m_meetingList.push_back(newtwo);
+  }
+  min.close();
+  return true;
+}
+
+  /**
+  *   write file content from memory
+  *   @return if success, true will be returned
+  */
+bool Storage::writeToFile(void) {
+  std::ofstream outfile;
+  outfile.open("../data/users.csv", std::ios_base::out);
+  if (!outfile.is_open()) return false;
+  std::list<User>::iterator iter;
+  for (iter = m_userList.begin(); iter != m_userList.end(); ++iter) {
+    outfile << "\"" << (*iter).getName() << "\"" << "," << "\"" << (*iter).getPassword()
+    << "\"" << ","<< "\"" << (*iter).getEmail() << "\"" << "," << "\"" 
+    << (*iter).getPhone() << "\"" << endl;
+  }
+  outfile.close();
+  std::ofstream output;
+  output.open("../data/meetings.csv", std::ios_base::out);
+  if (!output.is_open()) return false;
+  std::list<Meeting>::iterator it;
+  for (it = m_meetingList.begin(); it != m_meetingList.end(); it++) {
+    output << "\"" << (*it).getSponsor() << "\"" << ",";
+    std::vector<std::string> participator = (*it).getParticipator();
+    int i = 1;
+    output << "\"" << participator[0];
+    for (i = 1; i < participator.size(); i++) {
+      output << '&' << participator[i];
+    }
+    output << "\"" << ","<< "\"" ;
+    output << ((*it).getStartDate()).dateToString((*it).getStartDate());
+    output << ","<< "\"" ;
+    output << ((*it).getEndDate()).dateToString((*it).getEndDate());
+    output << "\"" ","<< "\"" ;
+    output << (*it).getTitle();
+    output << "\"" << endl;
+  }
+  output.close();
+  return true;
+}
+
+
+  /**
+  * get Instance of storage
+  * @return the pointer of the instance
+  */
+std::shared_ptr<Storage> Storage::getInstance(void) {
+  if (m_instance == NULL) {
+    m_instance = (std::shared_ptr<Storage>)new Storage;
+    return m_instance;
+  } else {
+    return m_instance;
+  }
+}
+
+  /**
+  *   destructor
+  */
+Storage::~Storage() {
+  sync();
+}
+
+  // CRUD for User & Meeting
+  // using C++11 Function Template and Lambda Expressions
+
+  /**
+  * create a user
+  * @param a user object
+  */
+void Storage::createUser(const User & t_user) {
+  m_userList.push_back(t_user);
+}
+
+  /**
+  * query users
+  * @param a lambda function as the filter
+  * @return a list of fitted users
+  */
+std::list<User> Storage::queryUser(std::function<bool(const User &)> filter) const {
+  std::list<User>::iterator it;
+  std::list<User> completelyNew;
+  for (auto it = m_userList.begin(); it != m_userList.end(); it++) {
+    if ((filter)((*it))) completelyNew.push_back((*it));
+  }
+  return completelyNew;
+}
+
+  /**
+  * update users
+  * @param a lambda function as the filter
+  * @param a lambda function as the method to update the user
+  * @return the number of updated users
+  */
+int Storage::updateUser(std::function<bool(const User &)> filter,
+                 std::function<void(User &)> switcher) {
+  int counter = 0;
+ 
+  for (auto it = m_userList.begin(); it != m_userList.end(); it++) {
+    if ((filter)((*it))) {
+      (switcher)(*it);
+      ++counter;
+    }
+  }
+  return counter;
+}
+
+  /**
+  * delete users
+  * @param a lambda function as the filter
+  * @return the number of deleted users
+  */
+int Storage::deleteUser(std::function<bool(const User &)> filter) {
+  int counter = 0;
+  std::list<User>::iterator it;
+  for (it = m_userList.begin(); it != m_userList.end(); it++) {
+    if ((filter)((*it))) {
+      m_userList.erase(it);
+      ++counter;
+    }
+  }
+  return counter;
+}
+
+  /**
+  * create a meeting
+  * @param a meeting object
+  */
+void Storage::createMeeting(const Meeting & t_meeting) {
+  m_meetingList.push_back(t_meeting);
+}
+
+  /**
+  * query meetings
+  * @param a lambda function as the filter
+  * @return a list of fitted meetings
+  */
+std::list<Meeting> Storage::queryMeeting(std::function<bool(const Meeting &)> filter) const {
+
+  std::list<Meeting> completelyNew;
+  for (auto it = m_meetingList.begin(); it != m_meetingList.end(); it++) {
+    if ((filter)((*it))) completelyNew.push_back((*it));
+  }
+  return completelyNew;
+}
+
+  /**
+  * update meetings
+  * @param a lambda function as the filter
+  * @param a lambda function as the method to update the meeting
+  * @return the number of updated meetings
+  */
+int Storage::updateMeeting(std::function<bool(const Meeting &)> filter,
+                    std::function<void(Meeting &)> switcher) {
+  int counter = 0;
+  std::list<Meeting>::iterator it;
+  for (auto it = m_meetingList.begin(); it != m_meetingList.end(); it++) {
+    if ((filter)((*it))) {
+      (switcher)(*it);
+      ++counter;
+    }
+  }
+  return counter;
+}
+
+  /**
+  * delete meetings
+  * @param a lambda function as the filter
+  * @return the number of deleted meetings
+  */
+int Storage::deleteMeeting(std::function<bool(const Meeting &)> filter) {
+  int counter = 0;
+  for (auto it = m_meetingList.begin(); it != m_meetingList.end(); it++) {
+    if ((filter)((*it))) {
+      m_meetingList.erase(it);
+      ++counter;
+    }
+  }
+  return counter;
+}
+
+  /**
+  * sync with the file
+  */
+bool Storage::sync(void) {
+  if (writeToFile()) return true;
+  return false;
+}
+
+
